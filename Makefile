@@ -4,7 +4,7 @@ ifdef CI
 override CFLAGS=-Wall -Wextra -Wshadow -Werror
 endif
 
-NAME=main
+NAME=roulette
 
 .PHONY: clean all
 
