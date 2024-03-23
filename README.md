@@ -1,5 +1,5 @@
 # Operating Systems - POSIX IPC Programs
-Programs in this repository primarily focus on inter-process communication (IPC) using POSIX methods, although they were written on Linux and use some Linux features thus they are not compliant with other POSIX systems. 
+Programs in this repository primarily focus on inter-process communication (IPC) using POSIX methods, although they were written on Linux and use some Linux features thus they are not compliant with POSIX standard. 
 
 ## Program list
 1. **[Roulette](https://github.com/Finger2003/SOP/tree/main/Roulette)**  - pipes
