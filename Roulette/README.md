@@ -1,5 +1,5 @@
 # Roulette Simulation
-Roulette Simulation is a simple roulette game implemented in C.
+Roulette Simulation is a simple roulette game using POSIX pipes.
 	
 ## How to Compile
 To compile the program, simply run the following command in your terminal:
@@ -25,7 +25,7 @@ This command will start the game with 5 players, each starting with $500.
 
 ## How the game works
 - The main process (Croupier) creates N player processes.
-- Players communicate with the dealer using Unix pipes.
+- Players communicate with the dealer using POSIX pipes.
 - In every round each player randomly selects an amount to bet (within their budget) and a number to bet on (0 to 36) with a payout of 35:1.
 - The dealer announces who bet how much and on which number.
 - The game continues as long as at least one player has money.
