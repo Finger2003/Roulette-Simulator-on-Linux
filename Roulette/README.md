@@ -1,5 +1,5 @@
-# Roulette Simulator
-Roulette Simulator is a simple roulette game implemented in C.
+# Roulette Simulation
+Roulette Simulation is a simple roulette game implemented in C.
 	
 ## How to Compile
 To compile the program, simply run the following command in your terminal:
