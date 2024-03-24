@@ -42,6 +42,94 @@ typedef struct msg2
     float result;
 } msg2_t;
 
+void usage(const char *name);
+void sigchld_handler(int sig);
+int sethandler(void (*f)(int), int sigNo);
+void sig_handler(int sig);
+void thread_func(union sigval sv);
+void child_work(mqd_t ptc, pid_t server_pid);
+void parent_work(int T1, int T2, mqd_t ptc);
+pid_t *create_children(int N, struct mq_attr *attr, char *mq_name);
+
+
+int main(int argc, char **argv)
+{
+    if (argc != 4)
+        usage(argv[0]);
+
+    int N = atoi(argv[1]);
+    if (N < 2 || N > 20)
+        usage(argv[0]);
+
+    int T1 = atoi(argv[2]);
+    int T2 = atoi(argv[3]);
+    if (T1 < MIN_TIME || T2 > MAX_TIME || T1 >= T2)
+        usage(argv[0]);
+
+    if(sethandler(sigchld_handler, SIGCHLD))
+        ERR("Setting parent SIGCHLD:");
+    if (sethandler(sig_handler, SIGINT))
+        ERR("Setting SIGINT handler");
+
+    children_left = N;
+    mqd_t ptc;
+
+
+    struct mq_attr attr;
+    attr.mq_maxmsg = MAX_MSGS;
+    attr.mq_msgsize = MAX_MSG_SIZE;
+    char mq_name[MAX_QUEUE_NAME] = {0};
+    char mq_result_name[MAX_QUEUE_NAME] = {0};
+
+    printf("Server is starting...\n");
+
+    snprintf(mq_name, MAX_QUEUE_NAME, TASK_QUEUE_NAME, getpid());
+    pid_t *children_pid = create_children(N, &attr, mq_name);
+
+    mqd_t *ctp = (mqd_t *)malloc(N * sizeof(mqd_t));
+    if (!ctp)
+        ERR("malloc");
+
+    static struct sigevent noti;
+    noti.sigev_notify = SIGEV_THREAD;
+    noti.sigev_notify_function = thread_func;
+
+    for (int i = 0; i < N; i++)
+    {
+        snprintf(mq_result_name, MAX_QUEUE_NAME, RESULT_QUEUE_NAME, getpid(), children_pid[i]);
+        if ((ctp[i] = TEMP_FAILURE_RETRY(mq_open(mq_result_name, O_RDONLY | O_NONBLOCK | O_CREAT, 0600, &attr))) == (mqd_t)-1)
+            ERR("mq open server");
+
+        noti.sigev_value.sival_ptr = &(ctp[i]);
+
+        if (mq_notify(ctp[i], &noti) < 0)
+            ERR("mq_notify");
+    }
+
+    if ((ptc = TEMP_FAILURE_RETRY(mq_open(mq_name, O_WRONLY | O_NONBLOCK | O_CREAT, 0600, &attr))) == (mqd_t)-1)
+        ERR("mq_open server");
+
+    parent_work(T1, T2, ptc);
+    mq_close(ptc);
+
+    if (mq_unlink(mq_name))
+        ERR("mq unlink");
+
+    while (wait(NULL) > 0)
+        ;
+
+    for (int i = 0; i < N; i++)
+        mq_close(ctp[i]);
+
+    free(ctp);
+    free(children_pid);
+
+
+    printf("All child processes have finished.\n");
+    return EXIT_SUCCESS;
+}
+
+
 void usage(const char *name)
 {
     fprintf(stderr, "USAGE: %s N T1 T2\n", name);
@@ -84,14 +172,14 @@ void sig_handler(int sig)
     last_signal = sig;
 }
 
-void func_thread(union sigval sv)
+void thread_func(union sigval sv)
 {
     mqd_t *ctp = (mqd_t *)sv.sival_ptr;
     static struct sigevent sev;
     sev.sigev_notify = SIGEV_THREAD;
     sev.sigev_value.sival_ptr = ctp;
     sev.sigev_notify_attributes = NULL;
-    sev.sigev_notify_function = func_thread;
+    sev.sigev_notify_function = thread_func;
     if (mq_notify(*ctp, &sev) < 0)
         ERR("mq_notify");
     char buf[MAX_MSG_SIZE];
@@ -220,6 +308,7 @@ pid_t *create_children(int N, struct mq_attr *attr, char *mq_name)
         switch (child_pid = fork())
         {
             case 0:
+                free(children_pid);
                 if ((ptc = TEMP_FAILURE_RETRY(mq_open(mq_name, O_RDONLY | O_CREAT, 0600, attr))) == (mqd_t)-1)
                     ERR("mq open server");
 
@@ -235,79 +324,4 @@ pid_t *create_children(int N, struct mq_attr *attr, char *mq_name)
     }
 
     return children_pid;
-}
-
-int main(int argc, char **argv)
-{
-    if (argc != 4)
-        usage(argv[0]);
-
-    int N = atoi(argv[1]);
-    if (N < 2 || N > 20)
-        usage(argv[0]);
-
-    int T1 = atoi(argv[2]);
-    int T2 = atoi(argv[3]);
-    if (T1 < MIN_TIME || T2 > MAX_TIME || T1 >= T2)
-        usage(argv[0]);
-
-    if(sethandler(sigchld_handler, SIGCHLD))
-        ERR("Setting parent SIGCHLD:");
-    if (sethandler(sig_handler, SIGINT))
-        ERR("Setting SIGINT handler");
-
-    children_left = N;
-    mqd_t ptc;
-    mqd_t *ctp = (mqd_t *)malloc(N * sizeof(mqd_t));
-    if (!ctp)
-        ERR("malloc");
-
-    struct mq_attr attr;
-    attr.mq_maxmsg = MAX_MSGS;
-    attr.mq_msgsize = MAX_MSG_SIZE;
-    char mq_name[MAX_QUEUE_NAME] = {0};
-    char mq_result_name[MAX_QUEUE_NAME] = {0};
-
-    printf("Server is starting...\n");
-
-    snprintf(mq_name, MAX_QUEUE_NAME, TASK_QUEUE_NAME, getpid());
-    pid_t *children_pid = create_children(N, &attr, mq_name);
-
-    static struct sigevent noti;
-    noti.sigev_notify = SIGEV_THREAD;
-    noti.sigev_notify_function = func_thread;
-
-    for (int i = 0; i < N; i++)
-    {
-        snprintf(mq_result_name, MAX_QUEUE_NAME, RESULT_QUEUE_NAME, getpid(), children_pid[i]);
-        if ((ctp[i] = TEMP_FAILURE_RETRY(mq_open(mq_result_name, O_RDONLY | O_NONBLOCK | O_CREAT, 0600, &attr))) == (mqd_t)-1)
-            ERR("mq open server");
-
-        noti.sigev_value.sival_ptr = &(ctp[i]);
-
-        if (mq_notify(ctp[i], &noti) < 0)
-            ERR("mq_notify");
-    }
-
-    if ((ptc = TEMP_FAILURE_RETRY(mq_open(mq_name, O_WRONLY | O_NONBLOCK | O_CREAT, 0600, &attr))) == (mqd_t)-1)
-        ERR("mq_open server");
-
-    parent_work(T1, T2, ptc);
-    mq_close(ptc);
-
-    if (mq_unlink(mq_name))
-        ERR("mq unlink");
-
-    while (wait(NULL) > 0)
-        ;
-
-    for (int i = 0; i < N; i++)
-        mq_close(ctp[i]);
-
-    free(ctp);
-    free(children_pid);
-
-
-    printf("All child processes have finished.\n");
-    return EXIT_SUCCESS;
 }
