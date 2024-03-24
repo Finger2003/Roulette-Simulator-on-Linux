@@ -72,9 +72,8 @@ int main(int argc, char **argv)
         ERR("Setting SIGINT handler");
 
     children_left = N;
+    
     mqd_t ptc;
-
-
     struct mq_attr attr;
     attr.mq_maxmsg = MAX_MSGS;
     attr.mq_msgsize = MAX_MSG_SIZE;
